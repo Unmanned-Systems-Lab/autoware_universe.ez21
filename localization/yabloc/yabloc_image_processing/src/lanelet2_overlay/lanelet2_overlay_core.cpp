@@ -15,10 +15,10 @@
 #include "yabloc_image_processing/lanelet2_overlay/lanelet2_overlay.hpp"
 
 #include <eigen3/Eigen/StdVector>
-#include <opencv4/opencv2/calib3d.hpp>
-#include <opencv4/opencv2/core/eigen.hpp>
-#include <opencv4/opencv2/highgui.hpp>
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core/eigen.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 #include <yabloc_common/cv_decompress.hpp>
 #include <yabloc_common/extract_line_segments.hpp>
 #include <yabloc_common/pose_conversions.hpp>

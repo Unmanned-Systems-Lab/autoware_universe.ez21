@@ -16,7 +16,7 @@
 #define YABLOC_IMAGE_PROCESSING__LANELET2_OVERLAY__LANELET2_OVERLAY_HPP_
 
 #include <eigen3/Eigen/Geometry>
-#include <opencv4/opencv2/core.hpp>
+#include <opencv2/core.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <yabloc_common/ground_plane.hpp>
 #include <yabloc_common/static_tf_subscriber.hpp>

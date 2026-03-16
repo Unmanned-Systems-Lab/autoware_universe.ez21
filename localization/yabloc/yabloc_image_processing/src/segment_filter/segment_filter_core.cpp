@@ -14,8 +14,8 @@
 
 #include "yabloc_image_processing/segment_filter/segment_filter.hpp"
 
-#include <opencv4/opencv2/core.hpp>
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <yabloc_common/cv_decompress.hpp>
 #include <yabloc_common/pub_sub.hpp>
 

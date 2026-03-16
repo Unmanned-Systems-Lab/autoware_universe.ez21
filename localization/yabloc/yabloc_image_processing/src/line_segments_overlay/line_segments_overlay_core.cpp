@@ -14,7 +14,7 @@
 
 #include "yabloc_image_processing/line_segments_overlay/line_segments_overlay.hpp"
 
-#include <opencv4/opencv2/core/eigen.hpp>
+#include <opencv2/core/eigen.hpp>
 #include <yabloc_common/cv_decompress.hpp>
 #include <yabloc_common/pub_sub.hpp>
 

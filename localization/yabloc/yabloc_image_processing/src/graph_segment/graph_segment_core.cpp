@@ -16,11 +16,12 @@
 #include "yabloc_image_processing/graph_segment/histogram.hpp"
 
 #include <autoware_utils_system/stop_watch.hpp>
-#include <opencv4/opencv2/highgui.hpp>
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 #include <yabloc_common/cv_decompress.hpp>
 #include <yabloc_common/pub_sub.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <set>
 #include <unordered_map>
@@ -28,6 +29,38 @@
 
 namespace yabloc::graph_segment
 {
+namespace
+{
+cv::Mat fallback_segment_image(const cv::Mat & image, double sigma, float k)
+{
+  cv::Mat filtered;
+  // Approximate the missing ximgproc graph segmentation with a lightweight color grouping fallback.
+  cv::pyrMeanShiftFiltering(
+    image, filtered, std::max(5.0, sigma * 10.0), std::max(5.0, static_cast<double>(k)));
+
+  cv::Mat segmented(image.rows, image.cols, CV_32SC1);
+  std::unordered_map<int, int> label_map;
+  int next_label = 0;
+
+  for (int h = 0; h < filtered.rows; ++h) {
+    const auto * filtered_ptr = filtered.ptr<cv::Vec3b>(h);
+    auto * segmented_ptr = segmented.ptr<int>(h);
+    for (int w = 0; w < filtered.cols; ++w) {
+      const auto & pixel = filtered_ptr[w];
+      const int key =
+        ((pixel[0] / 16) << 8) | ((pixel[1] / 16) << 4) | (pixel[2] / 16);
+      const auto [it, inserted] = label_map.emplace(key, next_label);
+      if (inserted) {
+        ++next_label;
+      }
+      segmented_ptr[w] = it->second;
+    }
+  }
+
+  return segmented;
+}
+}  // namespace
+
 GraphSegment::GraphSegment(const rclcpp::NodeOptions & options)
 : Node("graph_segment", options),
   target_height_ratio_(static_cast<float>(declare_parameter<float>("target_height_ratio"))),
@@ -43,10 +76,17 @@ GraphSegment::GraphSegment(const rclcpp::NodeOptions & options)
   pub_mask_image_ = create_publisher<Image>("~/output/mask_image", 10);
   pub_debug_image_ = create_publisher<Image>("~/debug/segmented_image", 10);
 
-  const double sigma = declare_parameter<double>("sigma");
-  const float k = static_cast<float>(declare_parameter<float>("k"));
-  const int min_size = static_cast<int>(declare_parameter<double>("min_size"));
+  [[maybe_unused]] const double sigma = declare_parameter<double>("sigma");
+  [[maybe_unused]] const float k = static_cast<float>(declare_parameter<float>("k"));
+  [[maybe_unused]] const int min_size =
+    static_cast<int>(declare_parameter<double>("min_size"));
+#if YABLOC_HAS_OPENCV_XIMGPROC_SEGMENTATION
   segmentation_ = cv::ximgproc::segmentation::createGraphSegmentation(sigma, k, min_size);
+#else
+  RCLCPP_WARN(
+    get_logger(),
+    "OpenCV ximgproc segmentation is unavailable; using a simplified fallback segmenter.");
+#endif
 
   // additional area pickup module
   if (declare_parameter<bool>("pickup_additional_areas", true)) {
@@ -105,7 +145,13 @@ void GraphSegment::on_image(const Image & msg)
   // Execute graph-based segmentation
   autoware_utils_system::StopWatch stop_watch;
   cv::Mat segmented;
+#if YABLOC_HAS_OPENCV_XIMGPROC_SEGMENTATION
   segmentation_->processImage(resized, segmented);
+#else
+  const double sigma = get_parameter("sigma").as_double();
+  const float k = static_cast<float>(get_parameter("k").as_double());
+  segmented = fallback_segment_image(resized, sigma, k);
+#endif
   RCLCPP_INFO_STREAM(get_logger(), "segmentation time: " << stop_watch.toc() * 1000 << "[ms]");
 
   //

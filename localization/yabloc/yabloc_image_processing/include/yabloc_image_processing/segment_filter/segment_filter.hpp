@@ -15,7 +15,7 @@
 #ifndef YABLOC_IMAGE_PROCESSING__SEGMENT_FILTER__SEGMENT_FILTER_HPP_
 #define YABLOC_IMAGE_PROCESSING__SEGMENT_FILTER__SEGMENT_FILTER_HPP_
 
-#include <opencv4/opencv2/core.hpp>
+#include <opencv2/core.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <yabloc_common/camera_info_subscriber.hpp>
 #include <yabloc_common/static_tf_subscriber.hpp>

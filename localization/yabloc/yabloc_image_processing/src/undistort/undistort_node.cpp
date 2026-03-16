@@ -13,9 +13,9 @@
 // limitations under the License.
 
 #include <autoware_utils_system/stop_watch.hpp>
-#include <opencv4/opencv2/calib3d.hpp>
-#include <opencv4/opencv2/core.hpp>
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <yabloc_common/cv_decompress.hpp>
 #include <yabloc_common/pub_sub.hpp>

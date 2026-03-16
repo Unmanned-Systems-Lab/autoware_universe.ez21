@@ -10,6 +10,17 @@ autoware_package()
 add_compile_options(-Wno-deprecated-declarations)
 
 find_package(CUDA)
+if(CUDA_FOUND)
+  foreach(cuda_target_include_dir
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/${CMAKE_SYSTEM_PROCESSOR}-linux/include"
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/aarch64-linux/include"
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/sbsa-linux/include")
+    if(EXISTS "${cuda_target_include_dir}/cublas_v2.h")
+      list(APPEND CUDA_INCLUDE_DIRS "${cuda_target_include_dir}")
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES CUDA_INCLUDE_DIRS)
+endif()
 find_package(TENSORRT)
 find_package(OpenCV REQUIRED)
 
@@ -27,16 +38,25 @@ ament_target_dependencies(${PROJECT_NAME}
   OpenCV
 )
 
-list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_86,code=sm_86")
-list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_87,code=sm_87")
-list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_89,code=sm_89")
-if(CUDA_VERSION VERSION_LESS "13.0")
-  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_101,code=sm_101")
-else()  # CUDA 13.0 renamed SM101 to SM110
-  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_110,code=sm_110")
+execute_process(
+  COMMAND ${CUDA_NVCC_EXECUTABLE} --list-gpu-arch
+  OUTPUT_VARIABLE CUDA_SUPPORTED_GPU_ARCHS_RAW
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+string(REPLACE "\n" ";" CUDA_SUPPORTED_GPU_ARCHS "${CUDA_SUPPORTED_GPU_ARCHS_RAW}")
+
+foreach(cuda_arch IN ITEMS 86 87 89 90 101 110 120)
+  if("compute_${cuda_arch}" IN_LIST CUDA_SUPPORTED_GPU_ARCHS)
+    list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_${cuda_arch},code=sm_${cuda_arch}")
+  endif()
+endforeach()
+
+if("compute_120" IN_LIST CUDA_SUPPORTED_GPU_ARCHS)
+  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_120,code=compute_120")
+elseif("compute_90" IN_LIST CUDA_SUPPORTED_GPU_ARCHS)
+  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_90,code=compute_90")
 endif()
-list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_120,code=sm_120")
-list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_120,code=compute_120")
 
 cuda_add_library(${PROJECT_NAME}_gpu_preprocess
   SHARED
@@ -47,6 +67,7 @@ target_include_directories(${PROJECT_NAME}_gpu_preprocess
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+    ${CUDA_INCLUDE_DIRS}
     ${TENSORRT_INCLUDE_DIRS}
 )
 

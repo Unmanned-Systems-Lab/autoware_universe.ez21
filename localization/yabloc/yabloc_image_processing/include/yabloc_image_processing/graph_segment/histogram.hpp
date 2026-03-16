@@ -16,7 +16,7 @@
 #define YABLOC_IMAGE_PROCESSING__GRAPH_SEGMENT__HISTOGRAM_HPP_
 
 #include <Eigen/Core>
-#include <opencv4/opencv2/core.hpp>
+#include <opencv2/core.hpp>
 
 #include <algorithm>
 

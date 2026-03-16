@@ -5,6 +5,17 @@ find_package(autoware_cmake REQUIRED)
 autoware_package()
 
 find_package(CUDA)
+if(CUDA_FOUND)
+  foreach(cuda_target_include_dir
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/${CMAKE_SYSTEM_PROCESSOR}-linux/include"
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/aarch64-linux/include"
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/sbsa-linux/include")
+    if(EXISTS "${cuda_target_include_dir}/cublas_v2.h")
+      list(APPEND CUDA_INCLUDE_DIRS "${cuda_target_include_dir}")
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES CUDA_INCLUDE_DIRS)
+endif()
 
 if(NOT ${CUDA_FOUND})
   message(WARNING "cuda is not found, so the autoware_cuda_utils package won't be built.")

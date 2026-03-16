@@ -17,8 +17,8 @@
 
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Geometry>
-#include <opencv4/opencv2/core/eigen.hpp>
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/core/eigen.hpp>
+#include <opencv2/imgproc.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include <sensor_msgs/msg/camera_info.hpp>

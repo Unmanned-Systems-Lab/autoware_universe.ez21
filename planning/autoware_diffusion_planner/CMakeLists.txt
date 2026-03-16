@@ -11,10 +11,39 @@ option(CUDA_VERBOSE "Verbose output of CUDA modules" OFF)
 option(CUDA_AVAIL "CUDA available" OFF)
 find_package(CUDA)
 if(CUDA_FOUND)
+  foreach(cuda_target_include_dir
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/${CMAKE_SYSTEM_PROCESSOR}-linux/include"
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/aarch64-linux/include"
+      "${CUDA_TOOLKIT_ROOT_DIR}/targets/sbsa-linux/include")
+    if(EXISTS "${cuda_target_include_dir}/cublas_v2.h")
+      list(APPEND CUDA_INCLUDE_DIRS "${cuda_target_include_dir}")
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES CUDA_INCLUDE_DIRS)
+endif()
+if(CUDA_FOUND)
+set(CUDA_TARGET_LIBRARY_DIRS
+    "${CUDA_TOOLKIT_ROOT_DIR}/targets/${CMAKE_SYSTEM_PROCESSOR}-linux/lib"
+    "${CUDA_TOOLKIT_ROOT_DIR}/targets/${CMAKE_SYSTEM_PROCESSOR}-linux/lib/stubs"
+    "${CUDA_TOOLKIT_ROOT_DIR}/targets/aarch64-linux/lib"
+    "${CUDA_TOOLKIT_ROOT_DIR}/targets/aarch64-linux/lib/stubs"
+    "${CUDA_TOOLKIT_ROOT_DIR}/targets/sbsa-linux/lib"
+    "${CUDA_TOOLKIT_ROOT_DIR}/targets/sbsa-linux/lib/stubs"
+  )
+  list(APPEND CUDA_LIBRARY_DIRS ${CUDA_TARGET_LIBRARY_DIRS})
+  list(REMOVE_DUPLICATES CUDA_LIBRARY_DIRS)
   find_library(CUBLAS_LIBRARIES cublas HINTS
     ${CUDA_TOOLKIT_ROOT_DIR}/lib64
     ${CUDA_TOOLKIT_ROOT_DIR}/lib
+    ${CUDA_TARGET_LIBRARY_DIRS}
   )
+  if(NOT CUDA_curand_LIBRARY)
+    find_library(CUDA_curand_LIBRARY curand HINTS
+      ${CUDA_TOOLKIT_ROOT_DIR}/lib64
+      ${CUDA_TOOLKIT_ROOT_DIR}/lib
+      ${CUDA_TARGET_LIBRARY_DIRS}
+    )
+  endif()
   if(CUDA_VERBOSE)
     message(STATUS "CUDA is available!")
     message(STATUS "CUDA Libs: ${CUDA_LIBRARIES}")
