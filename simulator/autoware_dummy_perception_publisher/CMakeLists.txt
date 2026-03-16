@@ -22,10 +22,6 @@ set(${PROJECT_NAME}_DEPENDENCIES
   tf2_ros
 )
 
-ament_auto_add_library(signed_distance_function SHARED
-  src/signed_distance_function.cpp
-)
-
 ament_auto_add_executable(${PROJECT_NAME}_node
   src/main.cpp
   src/node.cpp
@@ -34,10 +30,7 @@ ament_auto_add_executable(${PROJECT_NAME}_node
   src/pointcloud_creator.cpp
   src/straight_line_object_movement_plugin.cpp
   src/predicted_object_movement_plugin.cpp
-)
-
-target_link_libraries(${PROJECT_NAME}_node
-  signed_distance_function
+  src/signed_distance_function.cpp
 )
 
 ament_target_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_DEPENDENCIES})
@@ -67,10 +60,13 @@ ament_auto_add_executable(empty_objects_publisher
 if(BUILD_TESTING)
   ament_add_ros_isolated_gtest(signed_distance_function-test
     test/src/test_signed_distance_function.cpp
+    src/signed_distance_function.cpp
   )
-  target_link_libraries(signed_distance_function-test
-    signed_distance_function
-  )
+  ament_target_dependencies(signed_distance_function-test ${${PROJECT_NAME}_DEPENDENCIES})
+  target_include_directories(signed_distance_function-test
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>)
 endif()
 
 ament_auto_package(
