@@ -87,7 +87,9 @@ bool ShapeEstimator::estimateOriginalShapeAndPose(
   } else if (label == Label::PEDESTRIAN) {
     model_ptr.reset(new model::CylinderShapeModel());
   } else {
-    model_ptr.reset(new model::ConvexHullShapeModel());
+    // For clustered unknown obstacles, a bounding box keeps non-zero BEV size for downstream
+    // tracker/planner modules without requiring a semantic label.
+    model_ptr.reset(new model::BoundingBoxShapeModel(ref_yaw_info, use_boost_bbox_optimizer_));
   }
 
   return model_ptr->estimate(cluster, shape_output, pose_output);

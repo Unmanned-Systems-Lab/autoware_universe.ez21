@@ -212,6 +212,11 @@ void ScenarioSelectorNode::updateCurrentScenario()
 
 bool ScenarioSelectorNode::isSwitchToParking(const bool is_stopped)
 {
+  if (force_parking_) {
+    lane_driving_stop_time_ = {};
+    return is_stopped && isAutonomous();
+  }
+
   const auto is_in_parking_lot =
     isInParkingLot(route_handler_->getLaneletMapPtr(), current_pose_->pose.pose);
   const auto is_goal_in_lane =
@@ -355,6 +360,11 @@ void ScenarioSelectorNode::updateData()
   }
 
   {
+    auto msg = sub_force_parking_->take_data();
+    force_parking_ = msg ? msg->data : force_parking_;
+  }
+
+  {
     auto msgs = sub_odom_->take_data();
     for (const auto & msg : msgs) {
       onOdom(msg);
@@ -446,7 +456,8 @@ ScenarioSelectorNode::ScenarioSelectorNode(const rclcpp::NodeOptions & node_opti
   th_stopped_time_sec_(this->declare_parameter<double>("th_stopped_time_sec")),
   th_stopped_velocity_mps_(this->declare_parameter<double>("th_stopped_velocity_mps")),
   enable_mode_switching_(this->declare_parameter<bool>("enable_mode_switching")),
-  is_parking_completed_(false)
+  is_parking_completed_(false),
+  force_parking_(false)
 {
   lane_driving_stop_time_ = {};
   empty_parking_trajectory_time_ = {};
@@ -473,6 +484,9 @@ ScenarioSelectorNode::ScenarioSelectorNode(const rclcpp::NodeOptions & node_opti
 
   sub_parking_state_ = decltype(sub_parking_state_)::element_type::create_subscription(
     this, "is_parking_completed", rclcpp::QoS{1});
+
+  sub_force_parking_ = decltype(sub_force_parking_)::element_type::create_subscription(
+    this, "input/force_parking", rclcpp::QoS{1}.transient_local());
 
   sub_operation_mode_state_ =
     decltype(sub_operation_mode_state_)::element_type::create_subscription(

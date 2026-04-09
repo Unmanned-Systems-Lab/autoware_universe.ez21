@@ -99,6 +99,7 @@ private:
   autoware_utils::InterProcessPollingSubscriber<
     nav_msgs::msg::Odometry, autoware_utils::polling_policy::All>::SharedPtr sub_odom_;
   autoware_utils::InterProcessPollingSubscriber<std_msgs::msg::Bool>::SharedPtr sub_parking_state_;
+  autoware_utils::InterProcessPollingSubscriber<std_msgs::msg::Bool>::SharedPtr sub_force_parking_;
   autoware_utils::InterProcessPollingSubscriber<
     autoware_adapi_v1_msgs::msg::OperationModeState>::SharedPtr sub_operation_mode_state_;
 
@@ -123,6 +124,7 @@ private:
   double th_stopped_velocity_mps_;
   bool enable_mode_switching_;
   bool is_parking_completed_;
+  bool force_parking_;
 
   boost::optional<rclcpp::Time> lane_driving_stop_time_;
   boost::optional<rclcpp::Time> empty_parking_trajectory_time_;
