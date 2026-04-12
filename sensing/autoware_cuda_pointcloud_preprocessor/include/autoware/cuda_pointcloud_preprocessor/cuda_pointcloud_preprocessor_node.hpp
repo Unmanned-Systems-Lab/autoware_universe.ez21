@@ -41,6 +41,7 @@
 
 #include <deque>
 #include <memory>
+#include <cstddef>
 #include <string>
 #include <utility>
 
@@ -53,7 +54,7 @@ namespace autoware::cuda_pointcloud_preprocessor
 {
 
 static_assert(sizeof(InputPointType) == sizeof(autoware::point_types::PointXYZIRCAEDT));
-static_assert(sizeof(OutputPointType) == sizeof(autoware::point_types::PointXYZIRC));
+static_assert(sizeof(OutputPointType) == sizeof(autoware::point_types::PointXYZIRCAEDT));
 
 CHECK_OFFSET(InputPointType, autoware::point_types::PointXYZIRCAEDT, x);
 CHECK_OFFSET(InputPointType, autoware::point_types::PointXYZIRCAEDT, y);
@@ -72,6 +73,10 @@ CHECK_OFFSET(OutputPointType, autoware::point_types::PointXYZIRCAEDT, z);
 CHECK_OFFSET(OutputPointType, autoware::point_types::PointXYZIRCAEDT, intensity);
 CHECK_OFFSET(OutputPointType, autoware::point_types::PointXYZIRCAEDT, return_type);
 CHECK_OFFSET(OutputPointType, autoware::point_types::PointXYZIRCAEDT, channel);
+CHECK_OFFSET(OutputPointType, autoware::point_types::PointXYZIRCAEDT, azimuth);
+CHECK_OFFSET(OutputPointType, autoware::point_types::PointXYZIRCAEDT, elevation);
+CHECK_OFFSET(OutputPointType, autoware::point_types::PointXYZIRCAEDT, distance);
+CHECK_OFFSET(OutputPointType, autoware::point_types::PointXYZIRCAEDT, time_stamp);
 
 class CudaPointcloudPreprocessorNode : public rclcpp::Node
 {
@@ -84,8 +89,7 @@ private:
     tf2::Transform * tf2_transform_ptr);
 
   // Callback
-  void pointcloudCallback(AUTOWARE_MESSAGE_UNIQUE_PTR(sensor_msgs::msg::PointCloud2)
-                            input_pointcloud_msg_ptr);
+  void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr input_pointcloud_msg_ptr);
   void twistCallback(const geometry_msgs::msg::TwistWithCovarianceStamped & twist_msg);
   void imuCallback(const sensor_msgs::msg::Imu & imu_msg);
 
@@ -107,6 +111,10 @@ private:
   void publishDiagnostics(
     const sensor_msgs::msg::PointCloud2 & input_pointcloud_msg,
     const std::unique_ptr<cuda_blackboard::CudaPointCloud2> & output_pointcloud_ptr);
+  void updateTimingStats(
+    double input_age_ms, double process_ms, double diagnostics_ms, double publish_ms,
+    double preallocate_ms, double total_ms, std::size_t input_point_count,
+    std::size_t output_point_count);
 
   tf2_ros::Buffer tf2_buffer_;
   tf2_ros::TransformListener tf2_listener_;
@@ -129,7 +137,7 @@ private:
   autoware_utils::InterProcessPollingSubscriber<
     geometry_msgs::msg::TwistWithCovarianceStamped, autoware_utils::polling_policy::All>::SharedPtr
     twist_sub_;
-  AUTOWARE_SUBSCRIPTION_PTR(sensor_msgs::msg::PointCloud2) pointcloud_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
 
   // CUDA pub
   std::unique_ptr<cuda_blackboard::CudaBlackboardPublisher<cuda_blackboard::CudaPointCloud2>> pub_;
@@ -141,6 +149,28 @@ private:
 
   // Callback group for pointcloud subscription
   rclcpp::CallbackGroup::SharedPtr pointcloud_callback_group_;
+
+  struct TimingStatsWindow
+  {
+    std::size_t frame_count{0};
+    double input_age_ms_sum{0.0};
+    double input_age_ms_max{0.0};
+    double process_ms_sum{0.0};
+    double process_ms_max{0.0};
+    double diagnostics_ms_sum{0.0};
+    double diagnostics_ms_max{0.0};
+    double publish_ms_sum{0.0};
+    double publish_ms_max{0.0};
+    double preallocate_ms_sum{0.0};
+    double preallocate_ms_max{0.0};
+    double total_ms_sum{0.0};
+    double total_ms_max{0.0};
+    std::size_t last_input_point_count{0};
+    std::size_t last_output_point_count{0};
+  };
+
+  TimingStatsWindow timing_stats_window_;
+  std::size_t timing_stats_log_interval_{50};
 };
 
 }  // namespace autoware::cuda_pointcloud_preprocessor

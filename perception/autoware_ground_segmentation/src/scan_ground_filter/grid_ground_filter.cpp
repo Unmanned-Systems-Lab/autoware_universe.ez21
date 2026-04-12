@@ -18,6 +18,7 @@
 
 #include <pcl/PointIndices.h>
 
+#include <cstdio>
 #include <memory>
 #include <vector>
 
@@ -362,11 +363,22 @@ void GridGroundFilter::classify(pcl::PointIndices & out_no_ground_indices)
 
   // loop over grid cells
   const auto grid_size = grid_ptr_->getGridSize();
+  std::fprintf(stderr, "[grid_ground_filter] classify begin grid_size=%zu\n", grid_size);
+  std::fflush(stderr);
   for (size_t idx = 0; idx < grid_size; idx++) {
     auto & cell = grid_ptr_->getCell(idx);
     // if the cell is empty, skip
     if (cell.isEmpty()) continue;
     if (cell.is_processed_) continue;
+
+    if (idx % 5000 == 0) {
+      std::fprintf(
+        stderr,
+        "[grid_ground_filter] classify progress idx=%zu point_count=%zu processed=%d initialized=%d root=%d radial_idx=%u\n",
+        idx, cell.point_list_.size(), cell.is_processed_, cell.is_ground_initialized_,
+        cell.scan_grid_root_idx_, cell.radial_idx_);
+      std::fflush(stderr);
+    }
 
     // set a cell pointer for the previous cell
     // check scan root grid
@@ -473,24 +485,52 @@ void GridGroundFilter::process(
 
   // set input cloud
   in_cloud_ = in_cloud;
+  std::fprintf(
+    stderr,
+    "[grid_ground_filter] process begin stamp=%u.%u width=%u height=%u point_step=%u data=%zu\n",
+    in_cloud_->header.stamp.sec, in_cloud_->header.stamp.nanosec, in_cloud_->width,
+    in_cloud_->height, in_cloud_->point_step, in_cloud_->data.size());
+  std::fflush(stderr);
 
   // clear the output indices
   out_no_ground_indices.indices.clear();
 
   // reset grid cells
   grid_ptr_->resetCells();
+  std::fprintf(stderr, "[grid_ground_filter] resetCells done\n");
+  std::fflush(stderr);
 
   // 1. assign points to grid cells
+  std::fprintf(stderr, "[grid_ground_filter] convert begin\n");
+  std::fflush(stderr);
   convert();
+  std::fprintf(stderr, "[grid_ground_filter] convert done\n");
+  std::fflush(stderr);
 
   // 2. cell preprocess
+  std::fprintf(stderr, "[grid_ground_filter] preprocess begin\n");
+  std::fflush(stderr);
   preprocess();
+  std::fprintf(stderr, "[grid_ground_filter] preprocess done\n");
+  std::fflush(stderr);
 
   // 3. initialize ground
+  std::fprintf(stderr, "[grid_ground_filter] initializeGround begin\n");
+  std::fflush(stderr);
   initializeGround(out_no_ground_indices);
+  std::fprintf(
+    stderr, "[grid_ground_filter] initializeGround done non_ground_indices=%zu\n",
+    out_no_ground_indices.indices.size());
+  std::fflush(stderr);
 
   // 4. classify point cloud
+  std::fprintf(stderr, "[grid_ground_filter] classify begin call\n");
+  std::fflush(stderr);
   classify(out_no_ground_indices);
+  std::fprintf(
+    stderr, "[grid_ground_filter] classify done non_ground_indices=%zu\n",
+    out_no_ground_indices.indices.size());
+  std::fflush(stderr);
 }
 
 }  // namespace autoware::ground_segmentation

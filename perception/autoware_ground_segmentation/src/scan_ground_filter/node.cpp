@@ -347,6 +347,12 @@ void ScanGroundFilterComponent::faster_filter(
     grid_ground_filter_ptr_->setDataAccessor(input);
   }
 
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 2000,
+    "[scan_ground_filter] input stamp=%u.%u width=%u height=%u point_step=%u",
+    input->header.stamp.sec, input->header.stamp.nanosec, input->width, input->height,
+    input->point_step);
+
   pcl::PointIndices no_ground_indices;
 
   if (elevation_grid_mode_) {
@@ -375,6 +381,11 @@ void ScanGroundFilterComponent::faster_filter(
     debug_publisher_ptr_->publish<autoware_internal_debug_msgs::msg::Float64Stamped>(
       "debug/processing_time_ms", processing_time_ms);
   }
+
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 2000,
+    "[scan_ground_filter] output stamp=%u.%u non_ground_width=%u height=%u",
+    output.header.stamp.sec, output.header.stamp.nanosec, output.width, output.height);
 }
 
 // TODO(taisa1): Temporary Implementation: Delete this function definition when all the filter

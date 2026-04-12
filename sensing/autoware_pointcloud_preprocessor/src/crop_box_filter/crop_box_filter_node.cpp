@@ -226,6 +226,12 @@ void CropBoxFilterComponent::faster_filter(
   auto crop_box_diagnostics = std::make_shared<CropBoxDiagnostics>(skipped_count);
 
   publish_diagnostics({latency_diagnostics, pass_rate_diagnostics, crop_box_diagnostics});
+
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 2000,
+    "[crop_box_filter] output stamp=%u.%u width=%u height=%u skipped_nan=%d transformed=%s",
+    output.header.stamp.sec, output.header.stamp.nanosec, output.width, output.height,
+    skipped_count, transform_info.need_transform ? "true" : "false");
 }
 
 void CropBoxFilterComponent::publish_diagnostics(

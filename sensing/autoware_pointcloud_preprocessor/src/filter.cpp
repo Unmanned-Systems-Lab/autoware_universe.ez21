@@ -365,6 +365,9 @@ bool autoware::pointcloud_preprocessor::Filter::convert_output_costly(
 void autoware::pointcloud_preprocessor::Filter::faster_input_indices_callback(
   const PointCloud2ConstPtr cloud, const PointIndicesConstPtr indices)
 {
+  const std::string node_name = this->get_name();
+  const bool trace_filter = node_name == "crop_box_filter" || node_name == "common_ground_filter";
+
   if (
     !utils::is_data_layout_compatible_with_point_xyzircaedt(*cloud) &&
     !utils::is_data_layout_compatible_with_point_xyzirc(*cloud)) {
@@ -417,12 +420,29 @@ void autoware::pointcloud_preprocessor::Filter::faster_input_indices_callback(
       cloud->width * cloud->height, cloud->header.frame_id.c_str());
   }
 
+  if (trace_filter) {
+    RCLCPP_INFO_THROTTLE(
+      this->get_logger(), *this->get_clock(), 2000,
+      "[faster_input_indices_callback] input frame=%s stamp=%u.%u width=%u height=%u point_step=%u data=%zu",
+      cloud->header.frame_id.c_str(), cloud->header.stamp.sec, cloud->header.stamp.nanosec,
+      cloud->width, cloud->height, cloud->point_step, cloud->data.size());
+  }
+
   tf_input_orig_frame_ = cloud->header.frame_id;
 
   // For performance reason, defer the transform computation.
   // Do not use pcl_ros::transformPointCloud(). It's too slow due to the unnecessary copy.
   TransformInfo transform_info;
-  if (!calculate_transform_matrix(tf_input_frame_, *cloud, transform_info)) return;
+  if (!calculate_transform_matrix(tf_input_frame_, *cloud, transform_info)) {
+    if (trace_filter) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "[faster_input_indices_callback] transform lookup failed target=%s source=%s stamp=%u.%u",
+        tf_input_frame_.c_str(), cloud->header.frame_id.c_str(), cloud->header.stamp.sec,
+        cloud->header.stamp.nanosec);
+    }
+    return;
+  }
 
   // Need setInputCloud() here because we have to extract x/y/z
   IndicesPtr vindices;

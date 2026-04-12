@@ -34,6 +34,10 @@ struct OutputPointType
   std::uint8_t intensity;
   std::uint8_t return_type;
   std::uint16_t channel;
+  float azimuth;
+  float elevation;
+  float distance;
+  std::uint32_t time_stamp;
 };
 
 struct InputPointType
@@ -51,13 +55,17 @@ struct InputPointType
 };
 #pragma pack(pop)
 
-static_assert(sizeof(OutputPointType) == sizeof(point_types::PointXYZIRC));
-static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRC, x));
-static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRC, y));
-static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRC, z));
-static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRC, intensity));
-static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRC, return_type));
-static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRC, channel));
+static_assert(sizeof(OutputPointType) == sizeof(point_types::PointXYZIRCAEDT));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, x));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, y));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, z));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, intensity));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, return_type));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, channel));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, azimuth));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, elevation));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, distance));
+static_assert(FIELD_IS_EQUAL(OutputPointType, point_types::PointXYZIRCAEDT, time_stamp));
 
 static_assert(sizeof(InputPointType) == sizeof(point_types::PointXYZIRCAEDT));
 static_assert(FIELD_IS_EQUAL(InputPointType, point_types::PointXYZIRCAEDT, x));

@@ -403,7 +403,7 @@ bool VoxelGridDynamicMapLoader::is_close_to_next_map_grid(
   if (
     static_cast<size_t>(neighbor_map_grid_index) >= current_voxel_grid_array_.size() ||
     neighbor_map_grid_index == current_map_grid_index ||
-    current_voxel_grid_array_.at(neighbor_map_grid_index) != nullptr) {
+    current_voxel_grid_array_.at(neighbor_map_grid_index) == nullptr) {
     return false;
   }
   if (is_close_to_neighbor_voxels(

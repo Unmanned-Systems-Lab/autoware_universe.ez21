@@ -66,6 +66,10 @@ CudaPointcloudPreprocessor::CudaPointcloudPreprocessor() : stream_(initialize_st
     make_point_field("intensity", 12, PointField::UINT8, 1),
     make_point_field("return_type", 13, PointField::UINT8, 1),
     make_point_field("channel", 14, PointField::UINT16, 1),
+    make_point_field("azimuth", 16, PointField::FLOAT32, 1),
+    make_point_field("elevation", 20, PointField::FLOAT32, 1),
+    make_point_field("distance", 24, PointField::FLOAT32, 1),
+    make_point_field("time_stamp", 28, PointField::UINT32, 1),
   };
 
   int num_sm{};
@@ -414,9 +418,7 @@ std::unique_ptr<cuda_blackboard::CudaPointCloud2> CudaPointcloudPreprocessor::pr
         ring_outlier_parameters_.object_length_threshold,
       threads_per_block_, blocks_per_grid, stream_);
   } else {
-    thrust::fill(
-      thrust::device, device_ring_outlier_mask, device_ring_outlier_mask + num_organized_points_,
-      1);
+    thrust_stream::fill<uint32_t>(device_ring_outlier_mask_, 1, stream_);
   }
 
   combineMasksLaunch(

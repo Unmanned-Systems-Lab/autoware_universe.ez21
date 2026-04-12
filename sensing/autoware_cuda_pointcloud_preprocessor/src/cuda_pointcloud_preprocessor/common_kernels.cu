@@ -16,6 +16,8 @@
 #include "autoware/cuda_pointcloud_preprocessor/point_types.hpp"
 #include "autoware/cuda_pointcloud_preprocessor/types.hpp"
 
+#include <autoware/cuda_utils/cuda_check_error.hpp>
+
 namespace autoware::cuda_pointcloud_preprocessor
 {
 __global__ void transformPointsKernel(
@@ -107,6 +109,10 @@ __global__ void extractPointsKernel(
     output_point.intensity = input_point.intensity;
     output_point.return_type = input_point.return_type;
     output_point.channel = input_point.channel;
+    output_point.azimuth = input_point.azimuth;
+    output_point.elevation = input_point.elevation;
+    output_point.distance = input_point.distance;
+    output_point.time_stamp = input_point.time_stamp;
   }
 }
 
@@ -116,6 +122,7 @@ void transformPointsLaunch(
 {
   transformPointsKernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
     input_points, output_points, num_points, transform);
+  CHECK_CUDA_ERROR(cudaGetLastError());
 }
 
 void cropBoxLaunch(
@@ -126,6 +133,7 @@ void cropBoxLaunch(
   cropBoxKernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
     d_points, output_crop_mask, output_nan_mask, num_points, crop_box_parameters_ptr,
     num_crop_boxes);
+  CHECK_CUDA_ERROR(cudaGetLastError());
 }
 
 void combineMasksLaunch(
@@ -134,6 +142,7 @@ void combineMasksLaunch(
 {
   combineMasksKernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
     mask1, mask2, num_points, output_mask);
+  CHECK_CUDA_ERROR(cudaGetLastError());
 }
 
 void extractPointsLaunch(
@@ -143,6 +152,7 @@ void extractPointsLaunch(
 {
   extractPointsKernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
     input_points, masks, indices, num_points, output_points);
+  CHECK_CUDA_ERROR(cudaGetLastError());
 }
 
 }  // namespace autoware::cuda_pointcloud_preprocessor

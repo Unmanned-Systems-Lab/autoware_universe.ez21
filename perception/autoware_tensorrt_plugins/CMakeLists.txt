@@ -85,16 +85,15 @@ if(TRT_AVAIL AND CUDA_AVAIL AND SPCONV_AVAIL)
 
   # cSpell:ignore expt
   list(APPEND CUDA_NVCC_FLAGS "--expt-relaxed-constexpr -diag-suppress 1675 --extended-lambda")
-  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_86,code=sm_86")
-  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_87,code=sm_87")
-  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_89,code=sm_89")
-  if(CUDA_VERSION VERSION_LESS "13.0")
-    list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_101,code=sm_101")
-  else()  # CUDA 13.0 renamed SM101 to SM110
-    list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_110,code=sm_110")
+  # Prefer the active Jetson SM over future targets unsupported by older nvcc.
+  if(DEFINED ENV{JETSON_CUDA_ARCH_BIN} AND NOT "$ENV{JETSON_CUDA_ARCH_BIN}" STREQUAL "")
+    string(REPLACE "." "" _cuda_arch_bin "$ENV{JETSON_CUDA_ARCH_BIN}")
+    list(APPEND CUDA_NVCC_FLAGS "-gencode=arch=compute_${_cuda_arch_bin},code=sm_${_cuda_arch_bin}")
+  else()
+    list(APPEND CUDA_NVCC_FLAGS "-gencode=arch=compute_86,code=sm_86")
+    list(APPEND CUDA_NVCC_FLAGS "-gencode=arch=compute_87,code=sm_87")
+    list(APPEND CUDA_NVCC_FLAGS "-gencode=arch=compute_89,code=sm_89")
   endif()
-  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_120,code=sm_120")
-  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_120,code=compute_120")
 
   cuda_add_library(cuda_ops SHARED
     src/argsort_ops/argsort.cu
@@ -156,4 +155,8 @@ if(TRT_AVAIL AND CUDA_AVAIL AND SPCONV_AVAIL)
 else()
   find_package(ament_cmake_auto REQUIRED)
   ament_auto_find_build_dependencies()
+  # Even when TensorRT/CUDA/spconv are unavailable, export a complete
+  # ament package so sourcing the workspace does not warn about missing
+  # local_setup files for this package.
+  ament_auto_package()
 endif()

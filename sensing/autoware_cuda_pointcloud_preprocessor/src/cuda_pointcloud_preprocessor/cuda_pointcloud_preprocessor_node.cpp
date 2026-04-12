@@ -34,6 +34,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <memory>
@@ -44,6 +45,14 @@
 namespace autoware::cuda_pointcloud_preprocessor
 {
 using sensor_msgs::msg::PointCloud2;
+
+namespace
+{
+double toMilliseconds(const std::chrono::steady_clock::duration duration)
+{
+  return std::chrono::duration<double, std::milli>(duration).count();
+}
+}  // namespace
 
 CudaPointcloudPreprocessorNode::CudaPointcloudPreprocessorNode(
   const rclcpp::NodeOptions & node_options)
@@ -114,22 +123,16 @@ CudaPointcloudPreprocessorNode::CudaPointcloudPreprocessorNode(
     std::make_unique<autoware_utils::DiagnosticsInterface>(this, this->get_fully_qualified_name());
 
 // Subscriber
-#ifdef USE_AGNOCAST_ENABLED
-  agnocast::SubscriptionOptions sub_options{};
-#else
   rclcpp::SubscriptionOptions sub_options;
-  sub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Enable;
-#endif
+  sub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
 
-  // Create mutually exclusive callback group for pointcloud subscription
-  // Agnocast requires to be in a mutually exclusive callback group with no native ROS subscriptions
+  // Keep the raw PointCloud2 input on a regular ROS subscription here.
+  // On 102 this is the only path that reliably receives raw RoboSense data.
   pointcloud_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-
   sub_options.callback_group = pointcloud_callback_group_;
 
-  // cppcheck-suppress unknownMacro
-  pointcloud_sub_ = AUTOWARE_CREATE_SUBSCRIPTION(
-    sensor_msgs::msg::PointCloud2, "~/input/pointcloud", rclcpp::SensorDataQoS{}.keep_last(1),
+  pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+    "~/input/pointcloud", rclcpp::SensorDataQoS{}.keep_last(1),
     std::bind(&CudaPointcloudPreprocessorNode::pointcloudCallback, this, std::placeholders::_1),
     sub_options);
 
@@ -263,16 +266,31 @@ void CudaPointcloudPreprocessorNode::imuCallback(const sensor_msgs::msg::Imu & i
 }
 
 void CudaPointcloudPreprocessorNode::pointcloudCallback(
-  // cppcheck-suppress unknownMacro
-  AUTOWARE_MESSAGE_UNIQUE_PTR(sensor_msgs::msg::PointCloud2) input_pointcloud_msg_ptr)
+  const sensor_msgs::msg::PointCloud2::SharedPtr input_pointcloud_msg_ptr)
 {
+  const auto callback_start = std::chrono::steady_clock::now();
   const auto & input_pointcloud_msg = *input_pointcloud_msg_ptr;
+  static int cuda_preproc_cb_count = 0;
+  const bool log_probe = cuda_preproc_cb_count < 5;
+  if (log_probe) {
+    ++cuda_preproc_cb_count;
+    RCLCPP_INFO(
+      get_logger(),
+      "cuda_preprocessor callback #%d input stamp=%u.%u height=%u width=%u point_step=%u row_step=%u",
+      cuda_preproc_cb_count, input_pointcloud_msg.header.stamp.sec, input_pointcloud_msg.header.stamp.nanosec,
+      input_pointcloud_msg.height, input_pointcloud_msg.width, input_pointcloud_msg.point_step, input_pointcloud_msg.row_step);
+  }
 
   if (!validatePointcloudLayout(input_pointcloud_msg)) {
     return;
   }
 
   stop_watch_ptr_->toc("processing_time", true);
+  const auto input_age_ms =
+    std::chrono::duration<double, std::milli>(
+      std::chrono::nanoseconds(
+        (this->get_clock()->now() - input_pointcloud_msg.header.stamp).nanoseconds()))
+      .count();
 
   const auto [first_point_stamp, first_point_rel_stamp] =
     getFirstPointTimeInfo(input_pointcloud_msg);
@@ -282,16 +300,46 @@ void CudaPointcloudPreprocessorNode::pointcloudCallback(
   const auto transform_msg_opt = lookupTransformToBase(input_pointcloud_msg.header.frame_id);
   if (!transform_msg_opt.has_value()) return;
 
+  const auto process_start = std::chrono::steady_clock::now();
   auto output_pointcloud_ptr =
     processPointcloud(input_pointcloud_msg, *transform_msg_opt, first_point_rel_stamp);
+  const auto process_ms = toMilliseconds(std::chrono::steady_clock::now() - process_start);
   output_pointcloud_ptr->header.frame_id = base_frame_;
 
+  if (log_probe) {
+    RCLCPP_INFO(
+      get_logger(),
+      "cuda_preprocessor output height=%u width=%u point_step=%u row_step=%u frame=%s",
+      output_pointcloud_ptr->height, output_pointcloud_ptr->width, output_pointcloud_ptr->point_step,
+      output_pointcloud_ptr->row_step, output_pointcloud_ptr->header.frame_id.c_str());
+  }
+
+  const auto output_point_count =
+    static_cast<std::size_t>(output_pointcloud_ptr->width) *
+    static_cast<std::size_t>(output_pointcloud_ptr->height);
+
+  const auto diagnostics_start = std::chrono::steady_clock::now();
   publishDiagnostics(input_pointcloud_msg, output_pointcloud_ptr);
+  const auto diagnostics_ms =
+    toMilliseconds(std::chrono::steady_clock::now() - diagnostics_start);
+
+  const auto publish_start = std::chrono::steady_clock::now();
   pub_->publish(std::move(output_pointcloud_ptr));
+  const auto publish_ms = toMilliseconds(std::chrono::steady_clock::now() - publish_start);
 
   // Preallocate buffer for the next run.
   // This is intentionally done after publish() to avoid adding latency to the current cycle.
+  const auto preallocate_start = std::chrono::steady_clock::now();
   cuda_pointcloud_preprocessor_->preallocateOutput();
+  const auto preallocate_ms =
+    toMilliseconds(std::chrono::steady_clock::now() - preallocate_start);
+
+  const auto total_ms = toMilliseconds(std::chrono::steady_clock::now() - callback_start);
+  updateTimingStats(
+    input_age_ms, process_ms, diagnostics_ms, publish_ms, preallocate_ms, total_ms,
+    static_cast<std::size_t>(input_pointcloud_msg.width) *
+      static_cast<std::size_t>(input_pointcloud_msg.height),
+    output_point_count);
 }
 
 [[nodiscard]] bool CudaPointcloudPreprocessorNode::validatePointcloudLayout(
@@ -464,6 +512,48 @@ void CudaPointcloudPreprocessorNode::publishDiagnostics(
     "debug/processing_time_ms", processing_time_ms);
   debug_publisher_->publish<autoware_internal_debug_msgs::msg::Float64Stamped>(
     "debug/latency_ms", pipeline_latency_ms);
+}
+
+void CudaPointcloudPreprocessorNode::updateTimingStats(
+  const double input_age_ms, const double process_ms, const double diagnostics_ms,
+  const double publish_ms, const double preallocate_ms, const double total_ms,
+  const std::size_t input_point_count, const std::size_t output_point_count)
+{
+  auto & stats = timing_stats_window_;
+  ++stats.frame_count;
+  stats.input_age_ms_sum += input_age_ms;
+  stats.input_age_ms_max = std::max(stats.input_age_ms_max, input_age_ms);
+  stats.process_ms_sum += process_ms;
+  stats.process_ms_max = std::max(stats.process_ms_max, process_ms);
+  stats.diagnostics_ms_sum += diagnostics_ms;
+  stats.diagnostics_ms_max = std::max(stats.diagnostics_ms_max, diagnostics_ms);
+  stats.publish_ms_sum += publish_ms;
+  stats.publish_ms_max = std::max(stats.publish_ms_max, publish_ms);
+  stats.preallocate_ms_sum += preallocate_ms;
+  stats.preallocate_ms_max = std::max(stats.preallocate_ms_max, preallocate_ms);
+  stats.total_ms_sum += total_ms;
+  stats.total_ms_max = std::max(stats.total_ms_max, total_ms);
+  stats.last_input_point_count = input_point_count;
+  stats.last_output_point_count = output_point_count;
+
+  if (stats.frame_count < timing_stats_log_interval_) {
+    return;
+  }
+
+  const auto frames = static_cast<double>(stats.frame_count);
+  RCLCPP_INFO(
+    get_logger(),
+    "cuda_preprocessor timing window frames=%zu input_age_ms(avg/max)=%.3f/%.3f "
+    "process_ms(avg/max)=%.3f/%.3f diagnostics_ms(avg/max)=%.3f/%.3f "
+    "publish_ms(avg/max)=%.3f/%.3f preallocate_ms(avg/max)=%.3f/%.3f "
+    "total_ms(avg/max)=%.3f/%.3f last_points(in/out)=%zu/%zu",
+    stats.frame_count, stats.input_age_ms_sum / frames, stats.input_age_ms_max,
+    stats.process_ms_sum / frames, stats.process_ms_max, stats.diagnostics_ms_sum / frames,
+    stats.diagnostics_ms_max, stats.publish_ms_sum / frames, stats.publish_ms_max,
+    stats.preallocate_ms_sum / frames, stats.preallocate_ms_max, stats.total_ms_sum / frames,
+    stats.total_ms_max, stats.last_input_point_count, stats.last_output_point_count);
+
+  stats = TimingStatsWindow{};
 }
 
 }  // namespace autoware::cuda_pointcloud_preprocessor

@@ -17,13 +17,19 @@
 
 #include "yabloc_image_processing/graph_segment/similar_area_searcher.hpp"
 
-#include <opencv4/opencv2/ximgproc/segmentation.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <memory>
+
+#if __has_include(<opencv2/ximgproc/segmentation.hpp>)
+#include <opencv2/ximgproc/segmentation.hpp>
+#define YABLOC_HAS_OPENCV_XIMGPROC_SEGMENTATION 1
+#else
+#define YABLOC_HAS_OPENCV_XIMGPROC_SEGMENTATION 0
+#endif
 
 namespace yabloc::graph_segment
 {
@@ -41,7 +47,9 @@ private:
   rclcpp::Subscription<Image>::SharedPtr sub_image_;
   rclcpp::Publisher<Image>::SharedPtr pub_mask_image_;
   rclcpp::Publisher<Image>::SharedPtr pub_debug_image_;
+#if YABLOC_HAS_OPENCV_XIMGPROC_SEGMENTATION
   cv::Ptr<cv::ximgproc::segmentation::GraphSegmentation> segmentation_;
+#endif
   std::unique_ptr<SimilarAreaSearcher> similar_area_searcher_{nullptr};
 
   void on_image(const Image & msg);

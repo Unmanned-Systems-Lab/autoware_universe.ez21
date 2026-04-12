@@ -123,6 +123,17 @@ void CudaScanGroundSegmentationFilterNode::cudaPointCloudCallback(
     stop_watch_ptr_->tic("processing_time");
   }
 
+  static int cuda_ground_seg_cb_count = 0;
+  const bool log_probe = cuda_ground_seg_cb_count < 5;
+  if (log_probe) {
+    ++cuda_ground_seg_cb_count;
+    RCLCPP_INFO(
+      get_logger(),
+      "cuda_ground_seg callback #%d input stamp=%u.%u height=%u width=%u point_step=%u row_step=%u",
+      cuda_ground_seg_cb_count, msg->header.stamp.sec, msg->header.stamp.nanosec, msg->height, msg->width,
+      msg->point_step, msg->row_step);
+  }
+
   auto non_ground_unique = std::make_unique<cuda_blackboard::CudaPointCloud2>();
   auto ground_unique = std::make_unique<cuda_blackboard::CudaPointCloud2>();
 
@@ -133,6 +144,14 @@ void CudaScanGroundSegmentationFilterNode::cudaPointCloudCallback(
     std::shared_ptr<cuda_blackboard::CudaPointCloud2>(ground_unique.get(), [](auto *) {});
 
   cuda_ground_segmentation_filter_->classifyPointCloud(*msg, *ground_shared, *non_ground_shared);
+
+  if (log_probe) {
+    RCLCPP_INFO(
+      get_logger(),
+      "cuda_ground_seg output non_ground height=%u width=%u row_step=%u ground height=%u width=%u row_step=%u",
+      non_ground_unique->height, non_ground_unique->width, non_ground_unique->row_step,
+      ground_unique->height, ground_unique->width, ground_unique->row_step);
+  }
 
   // Publish using the original unique_ptr
   pub_->publish(std::move(non_ground_unique));

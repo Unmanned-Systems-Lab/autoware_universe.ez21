@@ -28,6 +28,25 @@
 
 namespace yabloc::graph_segment
 {
+namespace
+{
+cv::Mat create_fallback_segmentation(const cv::Mat & image)
+{
+  cv::Mat gray;
+  cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+
+  cv::Mat blurred;
+  cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0.0);
+
+  cv::Mat binary;
+  cv::threshold(blurred, binary, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+
+  cv::Mat segmented;
+  cv::connectedComponents(binary, segmented, 8, CV_32S);
+  return segmented;
+}
+}  // namespace
+
 GraphSegment::GraphSegment(const rclcpp::NodeOptions & options)
 : Node("graph_segment", options),
   target_height_ratio_(static_cast<float>(declare_parameter<float>("target_height_ratio"))),
@@ -46,7 +65,16 @@ GraphSegment::GraphSegment(const rclcpp::NodeOptions & options)
   const double sigma = declare_parameter<double>("sigma");
   const float k = static_cast<float>(declare_parameter<float>("k"));
   const int min_size = static_cast<int>(declare_parameter<double>("min_size"));
+#if YABLOC_HAS_OPENCV_XIMGPROC_SEGMENTATION
   segmentation_ = cv::ximgproc::segmentation::createGraphSegmentation(sigma, k, min_size);
+#else
+  (void)sigma;
+  (void)k;
+  (void)min_size;
+  RCLCPP_WARN(
+    get_logger(),
+    "OpenCV ximgproc segmentation is unavailable; using connected-components fallback.");
+#endif
 
   // additional area pickup module
   if (declare_parameter<bool>("pickup_additional_areas", true)) {
@@ -105,7 +133,11 @@ void GraphSegment::on_image(const Image & msg)
   // Execute graph-based segmentation
   autoware_utils_system::StopWatch stop_watch;
   cv::Mat segmented;
+#if YABLOC_HAS_OPENCV_XIMGPROC_SEGMENTATION
   segmentation_->processImage(resized, segmented);
+#else
+  segmented = create_fallback_segmentation(resized);
+#endif
   RCLCPP_INFO_STREAM(get_logger(), "segmentation time: " << stop_watch.toc() * 1000 << "[ms]");
 
   //
