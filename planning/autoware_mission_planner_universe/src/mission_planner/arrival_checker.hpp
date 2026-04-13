@@ -15,12 +15,16 @@
 #ifndef MISSION_PLANNER__ARRIVAL_CHECKER_HPP_
 #define MISSION_PLANNER__ARRIVAL_CHECKER_HPP_
 
-#include <autoware/motion_utils/vehicle/vehicle_state_checker.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include <autoware_planning_msgs/msg/pose_with_uuid_stamped.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+
+#include <deque>
+#include <optional>
 
 namespace autoware::mission_planner_universe
 {
@@ -36,14 +40,25 @@ public:
   bool is_arrived(const PoseStamped & pose) const;
 
 private:
+  using Odometry = nav_msgs::msg::Odometry;
+  using TwistStamped = geometry_msgs::msg::TwistStamped;
+
   double angle_;
   double duration_;
   double arrival_check_lateral_distance_;
   double arrival_check_longitudinal_undershoot_distance_;
   double arrival_check_longitudinal_overshoot_distance_;
+  double arrival_check_stopped_velocity_mps_;
   std::optional<PoseWithUuidStamped> goal_with_uuid_;
   rclcpp::Subscription<PoseWithUuidStamped>::SharedPtr sub_goal_;
-  autoware::motion_utils::VehicleStopChecker vehicle_stop_checker_;
+  rclcpp::Subscription<Odometry>::SharedPtr sub_odometry_;
+  rclcpp::Clock::SharedPtr clock_;
+  std::deque<TwistStamped> twist_buffer_;
+
+  void on_odometry(const Odometry::ConstSharedPtr msg);
+  bool is_vehicle_stopped() const;
+
+  static constexpr double velocity_buffer_time_sec_ = 10.0;
 };
 
 }  // namespace autoware::mission_planner_universe

@@ -19,11 +19,16 @@
 #include <autoware_utils/math/unit_conversion.hpp>
 #include <tf2/utils.hpp>
 
+#include <cmath>
+#include <functional>
+
 namespace autoware::mission_planner_universe
 {
 
-ArrivalChecker::ArrivalChecker(rclcpp::Node * node) : vehicle_stop_checker_(node)
+ArrivalChecker::ArrivalChecker(rclcpp::Node * node)
 {
+  using std::placeholders::_1;
+
   const double angle_deg = node->declare_parameter<double>("arrival_check_angle_deg");
   angle_ = autoware_utils::deg2rad(angle_deg);
   arrival_check_lateral_distance_ =
@@ -33,6 +38,12 @@ ArrivalChecker::ArrivalChecker(rclcpp::Node * node) : vehicle_stop_checker_(node
   arrival_check_longitudinal_overshoot_distance_ =
     node->declare_parameter<double>("arrival_check_longitudinal_overshoot_distance");
   duration_ = node->declare_parameter<double>("arrival_check_duration");
+  arrival_check_stopped_velocity_mps_ =
+    node->declare_parameter<double>("arrival_check_stopped_velocity_mps", 0.05);
+  clock_ = node->get_clock();
+  sub_odometry_ = node->create_subscription<Odometry>(
+    "/localization/kinematic_state", rclcpp::QoS(1),
+    std::bind(&ArrivalChecker::on_odometry, this, _1));
 }
 
 void ArrivalChecker::set_goal()
@@ -89,7 +100,55 @@ bool ArrivalChecker::is_arrived(const PoseStamped & pose) const
   }
 
   // Check vehicle stopped.
-  return vehicle_stop_checker_.isVehicleStopped(duration_);
+  return is_vehicle_stopped();
+}
+
+void ArrivalChecker::on_odometry(const Odometry::ConstSharedPtr msg)
+{
+  TwistStamped twist_msg;
+  twist_msg.header = msg->header;
+  twist_msg.twist = msg->twist.twist;
+  if (twist_msg.header.stamp.sec == 0 && twist_msg.header.stamp.nanosec == 0) {
+    twist_msg.header.stamp = clock_->now();
+  }
+
+  twist_buffer_.push_back(twist_msg);
+
+  const auto latest_stamp = rclcpp::Time(twist_msg.header.stamp);
+  const auto cutoff = latest_stamp - rclcpp::Duration::from_seconds(velocity_buffer_time_sec_);
+  while (!twist_buffer_.empty() && rclcpp::Time(twist_buffer_.front().header.stamp) < cutoff) {
+    twist_buffer_.pop_front();
+  }
+}
+
+bool ArrivalChecker::is_vehicle_stopped() const
+{
+  if (twist_buffer_.empty()) {
+    return false;
+  }
+
+  const auto latest_stamp = rclcpp::Time(twist_buffer_.back().header.stamp);
+  const auto required_start = latest_stamp - rclcpp::Duration::from_seconds(duration_);
+  if (rclcpp::Time(twist_buffer_.front().header.stamp) > required_start) {
+    return false;
+  }
+
+  const double velocity_threshold_sq =
+    arrival_check_stopped_velocity_mps_ * arrival_check_stopped_velocity_mps_;
+  for (auto it = twist_buffer_.rbegin(); it != twist_buffer_.rend(); ++it) {
+    const auto stamp = rclcpp::Time(it->header.stamp);
+    const auto & linear = it->twist.linear;
+    const double velocity_sq =
+      linear.x * linear.x + linear.y * linear.y + linear.z * linear.z;
+    if (velocity_sq > velocity_threshold_sq) {
+      return false;
+    }
+    if (stamp <= required_start) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace autoware::mission_planner_universe

@@ -127,6 +127,25 @@ bool isStopped(
   return true;
 }
 
+bool isStoppedAtMissionGoal(
+  const autoware_planning_msgs::msg::LaneletRoute::ConstSharedPtr & route,
+  const nav_msgs::msg::Odometry::ConstSharedPtr & current_pose,
+  const std::deque<geometry_msgs::msg::TwistStamped::ConstSharedPtr> & twist_buffer,
+  const double th_arrived_distance_m, const double th_stopped_velocity_mps)
+{
+  if (!route || !current_pose) {
+    return false;
+  }
+
+  const auto & current_position = current_pose->pose.pose.position;
+  const auto & goal_position = route->goal_pose.position;
+  const auto dist_to_goal =
+    std::hypot(current_position.x - goal_position.x, current_position.y - goal_position.y);
+
+  return dist_to_goal < th_arrived_distance_m &&
+         isStopped(twist_buffer, th_stopped_velocity_mps);
+}
+
 }  // namespace
 
 autoware_planning_msgs::msg::Trajectory::ConstSharedPtr ScenarioSelectorNode::getScenarioTrajectory(
@@ -144,6 +163,8 @@ autoware_planning_msgs::msg::Trajectory::ConstSharedPtr ScenarioSelectorNode::ge
 
 std::string ScenarioSelectorNode::selectScenarioByPosition()
 {
+  const auto is_stopped_at_mission_goal = isStoppedAtMissionGoal(
+    route_, current_pose_, twist_buffer_, th_arrived_distance_m_, th_stopped_velocity_mps_);
   const auto is_in_lane =
     isInLane(route_handler_->getLaneletMapPtr(), current_pose_->pose.pose.position);
   const auto is_goal_in_lane =
@@ -161,12 +182,19 @@ std::string ScenarioSelectorNode::selectScenarioByPosition()
   }
 
   if (current_scenario_ == autoware_internal_planning_msgs::msg::Scenario::LANEDRIVING) {
+    if (is_stopped_at_mission_goal) {
+      return autoware_internal_planning_msgs::msg::Scenario::LANEDRIVING;
+    }
     if (is_in_parking_lot && !is_goal_in_lane) {
       return autoware_internal_planning_msgs::msg::Scenario::PARKING;
     }
   }
 
   if (current_scenario_ == autoware_internal_planning_msgs::msg::Scenario::PARKING) {
+    if (!is_force_parking_ && is_stopped_at_mission_goal) {
+      is_parking_completed_ = false;
+      return autoware_internal_planning_msgs::msg::Scenario::LANEDRIVING;
+    }
     if (is_parking_completed_ && is_in_lane) {
       is_parking_completed_ = false;
       return autoware_internal_planning_msgs::msg::Scenario::LANEDRIVING;
@@ -217,6 +245,12 @@ bool ScenarioSelectorNode::isSwitchToParking(const bool is_stopped)
     return isAutonomous();
   }
 
+  if (isStoppedAtMissionGoal(
+        route_, current_pose_, twist_buffer_, th_arrived_distance_m_, th_stopped_velocity_mps_)) {
+    lane_driving_stop_time_ = {};
+    return false;
+  }
+
   const auto is_in_parking_lot =
     isInParkingLot(route_handler_->getLaneletMapPtr(), current_pose_->pose.pose);
   const auto is_goal_in_lane =
@@ -237,6 +271,16 @@ bool ScenarioSelectorNode::isSwitchToParking(const bool is_stopped)
 
 bool ScenarioSelectorNode::isSwitchToLaneDriving()
 {
+  if (!is_force_parking_ && isStoppedAtMissionGoal(
+                               route_, current_pose_, twist_buffer_, th_arrived_distance_m_,
+                               th_stopped_velocity_mps_)) {
+    empty_parking_trajectory_time_ = {};
+    RCLCPP_INFO_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000,
+      "Switching from Parking to LaneDriving because force_parking is false and the vehicle is stopped at the mission goal.");
+    return true;
+  }
+
   const auto is_along_lane = isAlongLane(route_handler_, current_pose_->pose.pose);
 
   if (!isEmptyParkingTrajectory() || !is_along_lane) {
