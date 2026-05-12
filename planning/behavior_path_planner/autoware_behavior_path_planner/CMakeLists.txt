@@ -10,7 +10,6 @@ find_package(magic_enum CONFIG REQUIRED)
 ament_auto_add_library(${PROJECT_NAME}_lib SHARED
   src/planner_manager.cpp
   src/behavior_path_planner_node.cpp
-  src/test_utils.cpp
 )
 
 target_include_directories(${PROJECT_NAME}_lib SYSTEM PUBLIC
@@ -27,6 +26,10 @@ rclcpp_components_register_node(${PROJECT_NAME}_lib
 )
 
 if(BUILD_TESTING)
+  target_sources(${PROJECT_NAME}_lib PRIVATE
+    src/test_utils.cpp
+  )
+
   ament_add_ros_isolated_gmock(test_${CMAKE_PROJECT_NAME}_utilities
     test/input.cpp
     test/test_utils.cpp
