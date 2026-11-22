@@ -29,6 +29,7 @@
 
 namespace yabloc::graph_segment
 {
+#if !YABLOC_HAS_OPENCV_XIMGPROC_SEGMENTATION
 namespace
 {
 cv::Mat fallback_segment_image(const cv::Mat & image, double sigma, float k)
@@ -60,6 +61,7 @@ cv::Mat fallback_segment_image(const cv::Mat & image, double sigma, float k)
   return segmented;
 }
 }  // namespace
+#endif
 
 GraphSegment::GraphSegment(const rclcpp::NodeOptions & options)
 : Node("graph_segment", options),

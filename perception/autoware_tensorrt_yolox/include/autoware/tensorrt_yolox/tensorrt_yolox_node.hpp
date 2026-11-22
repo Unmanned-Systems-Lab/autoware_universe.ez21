@@ -96,6 +96,8 @@ private:
   bool is_roi_overlap_segment_;
   bool is_publish_color_mask_;
   float overlap_roi_score_threshold_;
+  float postprocess_score_threshold_{0.3f};
+  float postprocess_pedestrian_score_threshold_{0.2f};
   // TODO(badai-nguyen): change to function
   std::map<std::string, int> remap_roi_to_semantic_ = {
     {"UNKNOWN", 3},     // other

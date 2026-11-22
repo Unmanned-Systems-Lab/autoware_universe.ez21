@@ -18,7 +18,10 @@
 
 #include <pcl/common/centroid.h>
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <memory>
 #include <random>
 #include <string>
@@ -77,7 +80,7 @@ PlaneBasis getPlaneBasis(const Eigen::Vector3d & plane_normal)
   PlaneBasis basis;
   basis.e_z = plane_normal;
   basis.e_x = getArbitraryOrthogonalVector(plane_normal);
-  basis.e_y = basis.e_x.cross(basis.e_z);
+  basis.e_y = basis.e_z.cross(basis.e_x);
   return basis;
 }
 
@@ -99,6 +102,11 @@ RANSACGroundFilterComponent::RANSACGroundFilterComponent(const rclcpp::NodeOptio
   voxel_size_z_ = declare_parameter<double>("voxel_size_z");
   height_threshold_ = declare_parameter<double>("height_threshold");
   debug_ = declare_parameter<bool>("debug");
+
+  const double fit_max_range = declare_parameter<double>("fit_max_range", 0.0);
+  if (!(std::isfinite(fit_max_range) && fit_max_range >= 0.0)) {
+    throw std::invalid_argument("fit_max_range must be finite and nonnegative");
+  }
 
   if (unit_axis_ == "x") {
     unit_vec_ = Eigen::Vector3d::UnitX();
@@ -158,8 +166,8 @@ void RANSACGroundFilterComponent::publishDebugMessage(
     colored_ground_ptr->points.push_back(p);
   }
   sensor_msgs::msg::PointCloud2::SharedPtr ground_cloud_msg_ptr(new sensor_msgs::msg::PointCloud2);
-  ground_cloud_msg_ptr->header = header;
   pcl::toROSMsg(*colored_ground_ptr, *ground_cloud_msg_ptr);
+  ground_cloud_msg_ptr->header = header;
   ground_cloud_msg_ptr->header.frame_id = base_frame_;
   debug_pose_array_pub_->publish(debug_pose_array);
   debug_ground_cloud_pub_->publish(*ground_cloud_msg_ptr);
@@ -212,7 +220,9 @@ void RANSACGroundFilterComponent::applyRANSAC(
   seg.setDistanceThreshold(outlier_threshold_);
   seg.setInputCloud(input);
   seg.setMaxIterations(max_iterations_);
-  seg.setModelType(pcl::SACMODEL_PLANE);
+  seg.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
+  seg.setAxis(unit_vec_.cast<float>());
+  seg.setEpsAngle(plane_slope_threshold_ * M_PI / 180.0);
   seg.segment(*output_inliers, *output_coefficients);
 }
 
@@ -223,6 +233,11 @@ void RANSACGroundFilterComponent::filter(
   std::unique_ptr<ScopedTimeTrack> st_ptr;
   if (time_keeper_) st_ptr = std::make_unique<ScopedTimeTrack>(__func__, *time_keeper_);
 
+  // Read before mutex_ to avoid reversing the parameter-service lock order.
+  const double fit_max_range = get_parameter("fit_max_range").as_double();
+  if (!(std::isfinite(fit_max_range) && fit_max_range >= 0.0)) {
+    throw std::invalid_argument("fit_max_range must be finite and nonnegative");
+  }
   std::scoped_lock lock(mutex_);
 
   // check for empty point cloud
@@ -241,11 +256,34 @@ void RANSACGroundFilterComponent::filter(
   pcl::PointCloud<PointType>::Ptr current_sensor_cloud_ptr(new pcl::PointCloud<PointType>);
   pcl::fromROSMsg(*input_transformed_ptr, *current_sensor_cloud_ptr);
 
+  // Restrict only the plane-fit input; classify all original points below.
+  pcl::PointCloud<PointType>::Ptr fit_cloud = current_sensor_cloud_ptr;
+  if (fit_max_range > 0.0) {
+    fit_cloud.reset(new pcl::PointCloud<PointType>);
+    fit_cloud->points.reserve(current_sensor_cloud_ptr->points.size());
+    for (const auto & point : current_sensor_cloud_ptr->points) {
+      const double range_xy = std::hypot(static_cast<double>(point.x), static_cast<double>(point.y));
+      if (std::isfinite(range_xy) && range_xy <= fit_max_range) {
+        fit_cloud->points.push_back(point);
+      }
+    }
+    fit_cloud->width = static_cast<uint32_t>(fit_cloud->points.size());
+    fit_cloud->height = 1;
+    fit_cloud->is_dense = current_sensor_cloud_ptr->is_dense;
+  }
+  if (fit_cloud->points.size() < 3) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), std::chrono::milliseconds(1000).count(),
+      "Too few points inside fit_max_range to fit ground; passing input through");
+    output = *input;
+    return;
+  }
+
   // downsample pointcloud to reduce ransac calculation cost
   pcl::PointCloud<PointType>::Ptr downsampled_cloud(new pcl::PointCloud<PointType>);
   downsampled_cloud->points.reserve(current_sensor_cloud_ptr->points.size());
   pcl::VoxelGrid<PointType> filter;
-  filter.setInputCloud(current_sensor_cloud_ptr);
+  filter.setInputCloud(fit_cloud);
   filter.setLeafSize(voxel_size_x_, voxel_size_y_, voxel_size_z_);
   filter.filter(*downsampled_cloud);
 
@@ -266,9 +304,15 @@ void RANSACGroundFilterComponent::filter(
   Eigen::Vector3d plane_normal(
     coefficients->values[0], coefficients->values[1], coefficients->values[2]);
   {
-    const auto plane_slope = std::abs(
-      std::acos(plane_normal.dot(unit_vec_) / (plane_normal.norm() * unit_vec_.norm())) * 180 /
-      M_PI);
+    // A plane has equivalent normals n and -n. Reject invalid normals safely.
+    const double norm_product = plane_normal.norm() * unit_vec_.norm();
+    if (!std::isfinite(norm_product) || norm_product <= std::numeric_limits<double>::epsilon()) {
+      output = *input;
+      return;
+    }
+    const double cosine = std::clamp(
+      std::abs(plane_normal.dot(unit_vec_) / norm_product), 0.0, 1.0);
+    const double plane_slope = std::acos(cosine) * 180.0 / M_PI;
     if (plane_slope > plane_slope_threshold_) {
       output = *input;
       return;
@@ -329,6 +373,7 @@ void RANSACGroundFilterComponent::filter(
     const geometry_msgs::msg::Pose debug_pose = getDebugPose(plane_affine);
     geometry_msgs::msg::PoseArray debug_pose_array;
     debug_pose_array.header.frame_id = base_frame_;
+    debug_pose_array.header.stamp = input->header.stamp;
     debug_pose_array.poses.push_back(debug_pose);
     publishDebugMessage(debug_pose_array, *segment_ground_cloud_ptr, input->header);
   }
@@ -338,6 +383,16 @@ rcl_interfaces::msg::SetParametersResult RANSACGroundFilterComponent::param_call
   const std::vector<rclcpp::Parameter> & p)
 {
   std::scoped_lock lock(mutex_);
+
+  for (const auto & parameter : p) {
+    if (parameter.get_name() != "fit_max_range") continue;
+    rcl_interfaces::msg::SetParametersResult validation;
+    validation.successful = false;
+    validation.reason = "fit_max_range must be a finite nonnegative double";
+    if (parameter.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE) return validation;
+    const double fit_max_range = parameter.as_double();
+    if (!(std::isfinite(fit_max_range) && fit_max_range >= 0.0)) return validation;
+  }
 
   if (get_param(p, "base_frame", base_frame_)) {
     RCLCPP_DEBUG(get_logger(), "Setting base_frame to: %s.", base_frame_.c_str());

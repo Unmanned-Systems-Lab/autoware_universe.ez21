@@ -65,7 +65,7 @@ bool VoxelGridBasedEuclideanCluster::cluster(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & pointcloud_msg,
   tier4_perception_msgs::msg::DetectedObjectsWithFeature & objects)
 {
-  // TODO(Saito) implement use_height is false version
+  // Preserve height in both voxelization and clustering when requested.
   // 1) Convert ROS PointCloud2 to PCL cloud
   pcl::PointCloud<pcl::PointXYZ>::Ptr pointcloud(new pcl::PointCloud<pcl::PointXYZ>);
   int point_step = pointcloud_msg->point_step;
@@ -73,19 +73,20 @@ bool VoxelGridBasedEuclideanCluster::cluster(
   // 2) Voxel grid filtering
   pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_map_ptr(new pcl::PointCloud<pcl::PointXYZ>);
   constexpr float Z_AXIS_VOXEL_SIZE = 100000.0f;
-  voxel_grid_.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, Z_AXIS_VOXEL_SIZE);
+  voxel_grid_.setLeafSize(
+    voxel_leaf_size_, voxel_leaf_size_, use_height_ ? voxel_leaf_size_ : Z_AXIS_VOXEL_SIZE);
   voxel_grid_.setMinimumPointsNumberPerVoxel(min_points_number_per_voxel_);
   voxel_grid_.setInputCloud(pointcloud);
   voxel_grid_.setSaveLeafLayout(true);
   voxel_grid_.filter(*voxel_map_ptr);
 
-  // 3) Build 2D centroid cloud
+  // 3) Build centroid cloud for 2D or 3D clustering
   pcl::PointCloud<pcl::PointXYZ>::Ptr pointcloud_2d_ptr(new pcl::PointCloud<pcl::PointXYZ>);
   for (const auto & point : voxel_map_ptr->points) {
     pcl::PointXYZ point2d;
     point2d.x = point.x;
     point2d.y = point.y;
-    point2d.z = 0.0;  // Set z to 0.0 for 2D clustering
+    point2d.z = use_height_ ? point.z : 0.0f;
     pointcloud_2d_ptr->push_back(point2d);
   }
 

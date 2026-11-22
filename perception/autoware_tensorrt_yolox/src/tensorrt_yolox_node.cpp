@@ -45,6 +45,10 @@ TrtYoloXNode::TrtYoloXNode(const rclcpp::NodeOptions & node_options)
   const float score_threshold =
     static_cast<float>(this->declare_parameter<double>("score_threshold"));
   const float nms_threshold = static_cast<float>(this->declare_parameter<double>("nms_threshold"));
+  postprocess_score_threshold_ = static_cast<float>(
+    this->declare_parameter<double>("postprocess_score_threshold", 0.3));
+  postprocess_pedestrian_score_threshold_ = static_cast<float>(
+    this->declare_parameter<double>("postprocess_pedestrian_score_threshold", 0.2));
   const std::string calibration_algorithm =
     this->declare_parameter<std::string>("calibration_algorithm");
   const int dla_core_id = this->declare_parameter<int>("dla_core_id");
@@ -156,6 +160,21 @@ void TrtYoloXNode::onImage(const sensor_msgs::msg::Image::ConstSharedPtr msg)
     RCLCPP_WARN(this->get_logger(), "Fail to inference");
     return;
   }
+  // Filter once so published ROIs and visualization use the same detections.
+  for (auto & frame_objects : objects) {
+    frame_objects.erase(
+      std::remove_if(
+        frame_objects.begin(), frame_objects.end(), [this](const auto & object) {
+          const auto label = label_map_.find(object.type);
+          const bool is_pedestrian =
+            label != label_map_.end() && label->second == "PEDESTRIAN";
+          const float threshold = is_pedestrian ? postprocess_pedestrian_score_threshold_
+                                               : postprocess_score_threshold_;
+          return object.score < threshold;
+        }),
+      frame_objects.end());
+  }
+
   auto & mask = masks.at(0);
 
   for (const auto & yolox_object : objects.at(0)) {
