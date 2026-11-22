@@ -17,6 +17,8 @@
 #include <pcl_ros/transforms.hpp>
 
 #include <pcl/common/centroid.h>
+#include <pcl/filters/approximate_voxel_grid.h>
+#include <pcl/filters/filter.h>
 
 #include <algorithm>
 #include <cmath>
@@ -286,6 +288,21 @@ void RANSACGroundFilterComponent::filter(
   filter.setInputCloud(fit_cloud);
   filter.setLeafSize(voxel_size_x_, voxel_size_y_, voxel_size_z_);
   filter.filter(*downsampled_cloud);
+  // If the dense voxel indices overflow, PCL returns the input unchanged. Repeated
+  // sensor-origin returns can then dominate the plane fit. The hashed filter
+  // uses the same leaf sizes without indexing the entire bounding volume.
+  if (filter.getNrDivisions().isZero()) {
+    if (!fit_cloud->is_dense) {
+      pcl::PointCloud<PointType>::Ptr finite_cloud(new pcl::PointCloud<PointType>);
+      pcl::Indices indices;
+      pcl::removeNaNFromPointCloud(*fit_cloud, *finite_cloud, indices);
+      fit_cloud = finite_cloud;
+    }
+    pcl::ApproximateVoxelGrid<PointType> sparse_filter;
+    sparse_filter.setLeafSize(voxel_size_x_, voxel_size_y_, voxel_size_z_);
+    sparse_filter.setInputCloud(fit_cloud);
+    sparse_filter.filter(*downsampled_cloud);
+  }
 
   // apply ransac
   pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
